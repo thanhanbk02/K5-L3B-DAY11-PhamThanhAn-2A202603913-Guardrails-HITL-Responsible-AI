@@ -14,7 +14,9 @@ Protected data (nguồn leak):
 
 Blue (create_blue_agent) không bị tấn công ở CP4.
 """
+import asyncio
 import json
+import os
 import re
 from pathlib import Path
 
@@ -323,16 +325,26 @@ async def run_attacks(
     print("=" * 60)
 
     results = []
+    pause = float(os.environ.get("ATTACK_PAUSE_SECONDS", "0") or 0)
     for attack in prompts:
+        if pause > 0:
+            print(f"Chờ {pause:.0f}s trước lần gọi tiếp để tránh lỗi 503...")
+            await asyncio.sleep(pause)
         print(f"\n--- Attack #{attack['id']}: {attack['category']} ---")
         print(f"Input: {attack['input'][:100]}...")
 
         try:
-            response, _ = await chat_with_agent(agent, runner, attack["input"])
+            try:
+                response, _ = await chat_with_agent(agent, runner, attack["input"])
+            except Exception as first_error:
+                if "503" not in str(first_error):
+                    raise
+                print("Gặp 503. Chờ 60s rồi gọi lại một lần...")
+                await asyncio.sleep(60)
+                response, _ = await chat_with_agent(agent, runner, attack["input"])
             outcome = classify_attack_outcome(
                 attack["input"], response, target_name=target_name
             )
-            err = None
             result = {
                 "id": attack["id"],
                 "name": attack.get("category") or f"Attack #{attack['id']}",
@@ -345,7 +357,7 @@ async def run_attacks(
                 "blocked": outcome["blocked"],
                 "layer": outcome["layer"],
                 "blocked_at": outcome["blocked_at"],
-                "error": err,
+                "error": None,
                 "target": target_name,
             }
             print(f"Response: {response[:200]}...")
