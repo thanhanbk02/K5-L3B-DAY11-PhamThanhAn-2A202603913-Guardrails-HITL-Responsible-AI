@@ -35,6 +35,11 @@ _INJECTION_PATTERNS = (
     r"reveal\s+(?:your\s+)?(?:instructions|prompt|system)",
     r"pretend\s+(?:you\s+are|to\s+be)",
     r"act\s+as\s+(?:a\s+|an\s+)?unrestricted",
+    r"bo\s+qua\s+(?:moi\s+|cac\s+)?(?:huong\s+dan|chi\s+thi)",
+    r"tu\s+bay\s+gio\s+ban\s+la",
+    r"gia\s+vo\s+(?:ban\s+la|la)",
+    r"dong\s+vai\s+\S+(?:\s+\S+){0,4}\s+khong\s+gioi\s+han",
+    r"tiet\s+lo\s+(?:prompt|system\s*prompt|huong\s+dan|mat\s*khau|api)",
 )
 
 
@@ -43,6 +48,13 @@ def _normalize_input(user_input: str) -> str:
     if not user_input:
         return ""
     return unicodedata.normalize("NFKC", user_input).translate(_INVISIBLE)
+
+
+def _fold(user_input: str) -> str:
+    """Bỏ dấu tiếng Việt để 'tài khoản' khớp 'tai khoan' trong config."""
+    text = _normalize_input(user_input).lower().replace("đ", "d")
+    decomposed = unicodedata.normalize("NFD", text)
+    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
 
 
 # ============================================================
@@ -73,7 +85,7 @@ def detect_injection(user_input: str) -> InputStatus:
     Returns:
         ``"BLOCK"`` if injection detected (chặn), ``"ALLOW"`` otherwise (cho qua).
     """
-    normalized = _normalize_input(user_input)
+    normalized = _fold(user_input)
     for pattern in _INJECTION_PATTERNS:
         if re.search(pattern, normalized, re.IGNORECASE):
             return "BLOCK"
@@ -101,7 +113,7 @@ def topic_filter(user_input: str) -> InputStatus:
         ``"BLOCK"`` = chặn (off-topic hoặc topic cấm).
         ``"ALLOW"`` = cho qua (câu banking hợp lệ).
     """
-    input_lower = _normalize_input(user_input).lower()
+    input_lower = _fold(user_input)
 
     if any(topic in input_lower for topic in BLOCKED_TOPICS):
         return "BLOCK"
@@ -163,12 +175,12 @@ class InputGuardrailPlugin(base_plugin.BasePlugin):
         if detect_injection(text) == "BLOCK":
             self.blocked_count += 1
             return self._block_response(
-                "Request blocked: prompt injection detected."
+                "Yêu cầu bị chặn: phát hiện prompt injection."
             )
         if topic_filter(text) == "BLOCK":
             self.blocked_count += 1
             return self._block_response(
-                "Request blocked: question is outside VinBank banking topics."
+                "Yêu cầu bị chặn: câu hỏi nằm ngoài chủ đề ngân hàng VinBank."
             )
         return None
 
